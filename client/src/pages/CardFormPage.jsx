@@ -170,6 +170,12 @@ export function CardFormPage() {
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
       setFormError("Check the highlighted fields.");
+      const firstId = Object.keys(nextErrors)[0];
+      requestAnimationFrame(() => {
+        const field = document.getElementById(firstId);
+        field?.scrollIntoView({ block: "center" });
+        field?.focus();
+      });
       return;
     }
 

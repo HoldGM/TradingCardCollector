@@ -8,6 +8,7 @@ const { Pool } = pg;
 export const pool = new Pool({
   connectionString:
     process.env.DATABASE_URL || "postgres://catalog:catalog@localhost:5432/catalog",
+  connectionTimeoutMillis: 5000,
 });
 
 pool.on("error", (error) => {

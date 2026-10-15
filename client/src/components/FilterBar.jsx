@@ -114,7 +114,7 @@ export function FilterBar({ taxonomy, sportOrGames, filters, onChange, onClear }
             min="0"
             step="0.01"
             inputMode="decimal"
-            placeholder="0.00"
+            placeholder="Any"
             value={filters.minPrice}
             onChange={(event) => onChange({ minPrice: event.target.value })}
           />
