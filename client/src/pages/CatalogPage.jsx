@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { deleteCard, getTaxonomy, listCards } from "../api.js";
+import { notifyCatalogChanged } from "../catalogEvents.js";
 import { CardTable } from "../components/CardTable.jsx";
-import { CategoryNav } from "../components/CategoryNav.jsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
 import { FilterBar } from "../components/FilterBar.jsx";
 import { money } from "../format.js";
@@ -19,8 +19,16 @@ const INITIAL_FILTERS = {
   order: "desc",
 };
 
+const MIX = [
+  { key: "Sports", label: "Sports", color: "var(--sports)" },
+  { key: "Table Games", label: "Table Games", color: "var(--games)" },
+  { key: "Trading Cards", label: "Trading Cards", color: "var(--trading)" },
+];
+
 export function CatalogPage() {
-  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const genreParam = searchParams.get("genre") || "";
+  const [filters, setFilters] = useState({ ...INITIAL_FILTERS, genre: genreParam });
   const [taxonomy, setTaxonomy] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -29,6 +37,13 @@ export function CatalogPage() {
   const [pending, setPending] = useState(null);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState("");
+
+  useEffect(() => {
+    setFilters((current) => {
+      if (current.genre === genreParam) return current;
+      return { ...current, genre: genreParam, sportOrGame: "" };
+    });
+  }, [genreParam]);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +101,7 @@ export function CatalogPage() {
       sort: current.sort,
       order: current.order,
     }));
+    if (searchParams.get("genre")) setSearchParams({});
   }
 
   async function confirmRemove() {
@@ -95,6 +111,7 @@ export function CatalogPage() {
     try {
       await deleteCard(pending.id);
       setPending(null);
+      notifyCatalogChanged();
       setVersion((current) => current + 1);
     } catch (err) {
       setRemoveError(err.message || "The card could not be removed.");
@@ -106,12 +123,79 @@ export function CatalogPage() {
   const cards = data?.cards || [];
   const copies = cards.reduce((sum, card) => sum + card.quantity, 0);
   const worth = cards.reduce((sum, card) => sum + card.extendedValue, 0);
+  const graded = cards.filter((card) => card.grade).length;
+  const average = cards.length ? worth / cards.length : 0;
   const catalogEmpty = data?.counts?.All === 0;
   const filteredEmpty = data && cards.length === 0;
+  const totalCards = data?.counts?.All || 0;
 
   return (
     <div className="catalog">
-      <CategoryNav counts={data?.counts} genre={filters.genre} onChange={(genre) => updateFilters({ genre })} />
+      <section className="stats" aria-label="Collection summary">
+        <article className="stat">
+          <span className="stat-icon cards" aria-hidden="true">
+            <CardsIcon />
+          </span>
+          <div>
+            <p className="stat-label">Cards</p>
+            <p className="stat-value">{data ? cards.length : "–"}</p>
+            <p className="stat-note">{data ? "In this view" : "Loading"}</p>
+          </div>
+        </article>
+        <article className="stat">
+          <span className="stat-icon copies" aria-hidden="true">
+            <CopiesIcon />
+          </span>
+          <div>
+            <p className="stat-label">Copies</p>
+            <p className="stat-value">{data ? copies : "–"}</p>
+            <p className="stat-note">Quantity on hand</p>
+          </div>
+        </article>
+        <article className="stat">
+          <span className="stat-icon value" aria-hidden="true">
+            <ValueIcon />
+          </span>
+          <div>
+            <p className="stat-label">Value</p>
+            <p className="stat-value">{data ? money(worth) : "–"}</p>
+            <p className="stat-note">{data ? `${money(average)} average` : "Per card"}</p>
+          </div>
+        </article>
+        <article className="stat">
+          <span className="stat-icon graded" aria-hidden="true">
+            <GradeIcon />
+          </span>
+          <div>
+            <p className="stat-label">Graded</p>
+            <p className="stat-value">{data ? graded : "–"}</p>
+            <p className="stat-note">{data && cards.length ? `${Math.round((graded / cards.length) * 100)}% of this view` : "Professionally graded"}</p>
+          </div>
+        </article>
+      </section>
+
+      <section className="panel mix" aria-label="Category mix">
+        <div className="mix-head">
+          <h2>Category mix</h2>
+          <p>{totalCards} {totalCards === 1 ? "card" : "cards"} in the collection</p>
+        </div>
+        <div className="mix-bar" aria-hidden="true">
+          {MIX.map((item) => {
+            const count = data?.counts?.[item.key] || 0;
+            const width = totalCards ? (count / totalCards) * 100 : 0;
+            return <span key={item.key} style={{ width: `${width}%`, background: item.color }} />;
+          })}
+        </div>
+        <ul className="mix-legend">
+          {MIX.map((item) => (
+            <li key={item.key}>
+              <span className="legend-swatch" style={{ background: item.color }} />
+              {item.label}
+              <strong>{data?.counts?.[item.key] ?? 0}</strong>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <FilterBar
         taxonomy={taxonomy}
@@ -133,18 +217,23 @@ export function CatalogPage() {
       {loading && !data ? <p className="status">Loading the catalog…</p> : null}
 
       {data ? (
-        <>
-          <p className="summary" aria-live="polite">
-            {catalogEmpty
-              ? "No cards yet."
-              : `${cards.length} ${cards.length === 1 ? "card" : "cards"} · ${copies} ${
-                  copies === 1 ? "copy" : "copies"
-                } · ${money(worth)}`}
-            {loading ? " Updating…" : ""}
-          </p>
+        <section className="holdings">
+          <div className="holdings-head">
+            <div>
+              <h2>Holdings</h2>
+              <p className="summary" aria-live="polite">
+                {catalogEmpty
+                  ? "No cards yet."
+                  : `${cards.length} ${cards.length === 1 ? "card" : "cards"} · ${copies} ${
+                      copies === 1 ? "copy" : "copies"
+                    } · ${money(worth)}`}
+                {loading ? " Updating…" : ""}
+              </p>
+            </div>
+          </div>
 
           {filteredEmpty ? (
-            <div className="empty panel">
+            <div className="empty">
               <h2>{catalogEmpty ? "The catalog is empty" : "No cards match these filters"}</h2>
               <p>
                 {catalogEmpty
@@ -164,7 +253,7 @@ export function CatalogPage() {
           ) : (
             <CardTable cards={cards} onDelete={(card) => { setRemoveError(""); setPending(card); }} />
           )}
-        </>
+        </section>
       ) : null}
 
       {pending ? (
@@ -181,5 +270,41 @@ export function CatalogPage() {
         />
       ) : null}
     </div>
+  );
+}
+
+function CardsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="4" y="5" width="12" height="15" rx="2" />
+      <path d="M8 4h10a2 2 0 0 1 2 2v12" />
+    </svg>
+  );
+}
+
+function CopiesIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="8" y="7" width="11" height="13" rx="2" />
+      <path d="M5 16V5a2 2 0 0 1 2-2h9" />
+    </svg>
+  );
+}
+
+function ValueIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 7.5v9M9.5 9.5c.4-.8 1.2-1.2 2.5-1.2 1.5 0 2.4.7 2.4 1.8s-.8 1.6-2.4 1.9-2.5.7-2.5 1.9 1 1.8 2.6 1.8c1.2 0 2.1-.4 2.5-1.2" />
+    </svg>
+  );
+}
+
+function GradeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M8.5 12.2 11 14.5 15.8 9.5" />
+    </svg>
   );
 }

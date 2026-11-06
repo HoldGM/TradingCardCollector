@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { createCard, getCard, getTaxonomy, updateCard } from "../api.js";
+import { notifyCatalogChanged } from "../catalogEvents.js";
 
 const EMPTY_FORM = {
   name: "",
@@ -184,6 +185,7 @@ export function CardFormPage() {
     try {
       if (isEdit) await updateCard(id, toPayload(form));
       else await createCard(toPayload(form));
+      notifyCatalogChanged();
       navigate("/");
     } catch (error) {
       const fields = { ...(error.fields || {}) };
@@ -225,11 +227,6 @@ export function CardFormPage() {
 
   return (
     <div className="form-page">
-      <div className="page-heading">
-        <h1>{isEdit ? "Edit card" : "Add a card"}</h1>
-        <p>Choose a genre, then record condition, grade, quantity, and value.</p>
-      </div>
-
       <form className="panel form-panel" onSubmit={onSubmit} noValidate>
         {formError ? (
           <p className="banner" role="alert">
